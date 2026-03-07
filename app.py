@@ -129,6 +129,8 @@ def parse_args():
                    help="출력 CSV 파일명 (기본: daangn_seoul.csv)")
     p.add_argument("--chunk", type=str, default=None,
                    help="청크 번호 또는 범위 (예: 500, 1-847). 지정 시 대화형 선택 생략")
+    p.add_argument("--format", choices=["csv", "xlsx"], default=None,
+                   help="출력 형식: csv 또는 xlsx. 지정 시 대화형 선택 생략")
     p.add_argument("--reset", action="store_true",
                    help="이전 진행 무시하고 처음부터 시작")
     return p.parse_args()
@@ -339,6 +341,26 @@ def main():
         )
     # ──────────────────────────────────────────────────────
 
+    # ── 출력 형식 선택 ────────────────────────────────────
+    if args.format:
+        output_format = args.format
+    else:
+        console.print("  출력 형식을 선택하세요.")
+        console.print("  [bold]1[/]) CSV   [bold]2[/]) Excel")
+        console.print()
+        while True:
+            fmt_input = input("  선택 (1/2): ").strip()
+            if fmt_input == "1":
+                output_format = "csv"
+                break
+            elif fmt_input == "2":
+                output_format = "xlsx"
+                break
+            else:
+                console.print("  [red]1 또는 2를 입력하세요.[/]")
+        console.print()
+    # ──────────────────────────────────────────────────────
+
     # reset (청크 확정 후)
     if args.reset:
         for f in [cfg.progress_file, cfg.output_csv]:
@@ -382,15 +404,17 @@ def main():
 
     # 완료 요약
     console.print(f"\n [bold]완료[/]: {fmt_num(stats.scanned)}건 스캔 → [orange1]{fmt_num(stats.collected)}건[/] 서울 수집")
-    console.print(f" 저장: {cfg.output_csv}")
 
-    # Excel 변환
     if stats.collected > 0:
-        xlsx = export_excel()
-        if xlsx:
-            console.print(f" Excel: {xlsx}")
+        if output_format == "xlsx":
+            xlsx = export_excel()
+            if xlsx:
+                os.remove(cfg.output_csv)
+                console.print(f" 저장: {xlsx}")
+            else:
+                console.print(f" [red]Excel 변환 실패 (pip install openpyxl). CSV로 저장됨: {cfg.output_csv}[/]")
         else:
-            console.print(f" [dim]Excel 변환: pip install openpyxl 후 export.py 실행[/]")
+            console.print(f" 저장: {cfg.output_csv}")
 
     console.print()
 
