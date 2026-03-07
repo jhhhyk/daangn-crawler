@@ -34,8 +34,8 @@ HEADERS = {
 @dataclass
 class Config:
     workers: int = 10
-    batch_size: int = 100
-    batch_pause: float = 3.0
+    batch_size: int = 20
+    batch_pause: float = 5.0
     step: int = 1
     save_every: int = 50
     start_dbid: int = 733968953
