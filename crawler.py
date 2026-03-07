@@ -34,12 +34,12 @@ HEADERS = {
 @dataclass
 class Config:
     workers: int = 10
-    batch_size: int = 100
+    batch_size: int = 1
     batch_pause: float = 4.0
     step: int = 1
     save_every: int = 50
     start_dbid: int = 733968953
-    end_dbid: int = 727200000       # 유효 글 하한 (이 아래는 404)
+    end_dbid: int = 727174000       # 유효 글 하한 (이 아래는 404)
     output_csv: str = "daangn_seoul.csv"
     progress_file: str = "daangn_progress.json"
     regions_file: str = "seoul_regions.json"

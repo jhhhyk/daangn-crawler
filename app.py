@@ -33,9 +33,9 @@ console = Console()
 
 # ── 청크 상수 ─────────────────────────────────────────────
 CHUNK_TOTAL_START = 733_968_953
-CHUNK_TOTAL_END   = 727_200_000
+CHUNK_TOTAL_END   = 727_174_000
 CHUNK_SIZE        = 2_000
-CHUNK_PEOPLE      = 4
+CHUNK_PEOPLE      = 5
 
 
 def _all_chunks():
@@ -115,14 +115,14 @@ def parse_args():
     )
     p.add_argument("--start", type=int, default=733968953,
                    help="시작 dbId (기본: 733968953)")
-    p.add_argument("--end", type=int, default=727200000,
-                   help="종료 dbId (기본: 727200000)")
+    p.add_argument("--end", type=int, default=727174000,
+                   help="종료 dbId (기본: 727174000)")
     p.add_argument("--step", type=int, default=100,
                    help="dbId 간격 (1=전수, 100=1%%샘플) (기본: 100)")
     p.add_argument("--workers", type=int, default=10,
                    help="동시 요청 수 (기본: 10)")
-    p.add_argument("--batch", type=int, default=100,
-                   help="배치 크기 (기본: 100)")
+    p.add_argument("--batch", type=int, default=1,
+                   help="배치 크기 (기본: 1)")
     p.add_argument("--pause", type=float, default=4.0,
                    help="배치 간 쿨다운 초 (기본: 4.0)")
     p.add_argument("--output", type=str, default="daangn_seoul.csv",

@@ -3,9 +3,9 @@ make_chunks.py - dbId 범위를 2000개 단위로 분할해 chunks.txt로 저장
 """
 
 START  = 733_968_953
-END    = 727_200_000
+END    = 727_174_000
 CHUNK  = 2_000
-PEOPLE = 4
+PEOPLE = 5
 
 chunks = []
 cur = START
@@ -20,7 +20,7 @@ total = len(chunks)
 per_person = total // PEOPLE
 remainder  = total % PEOPLE
 
-# 4명 분배 (앞사람이 1개 더)
+# 5명 분배 (앞사람이 1개 더)
 assignments = []
 start_i = 0
 for person in range(1, PEOPLE + 1):
@@ -33,7 +33,7 @@ with open("chunks.txt", "w", encoding="utf-8") as f:
     f.write(f"총 dbId 범위: {START:,} ~ {END:,}  |  청크 크기: {CHUNK:,}  |  총 청크 수: {total:,}\n")
     f.write("=" * 70 + "\n\n")
 
-    f.write("[4명 분배 요약]\n")
+    f.write("[5명 분배 요약]\n")
     for person, si, ei, first, last in assignments:
         f.write(
             f"  {person}번: 청크 {first[0]:>4} ~ {last[0]:>4}  "
@@ -51,7 +51,7 @@ with open("chunks.txt", "w", encoding="utf-8") as f:
 
 print(f"chunks.txt 저장 완료  (총 {total}개 청크, 1인당 약 {per_person}개)")
 print()
-print("[4명 분배 요약]")
+print("[5명 분배 요약]")
 for person, si, ei, first, last in assignments:
     print(
         f"  {person}번: 청크 {first[0]:>4} ~ {last[0]:>4}  "
