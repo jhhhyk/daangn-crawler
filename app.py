@@ -117,8 +117,8 @@ def parse_args():
                    help="시작 dbId (기본: 733968953)")
     p.add_argument("--end", type=int, default=727174000,
                    help="종료 dbId (기본: 727174000)")
-    p.add_argument("--step", type=int, default=100,
-                   help="dbId 간격 (1=전수, 100=1%%샘플) (기본: 100)")
+    p.add_argument("--step", type=int, default=1,
+                   help="dbId 간격 (1=전수, 100=1%%샘플) (기본: 1)")
     p.add_argument("--workers", type=int, default=10,
                    help="동시 요청 수 (기본: 10)")
     p.add_argument("--batch", type=int, default=1,
