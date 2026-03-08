@@ -119,12 +119,14 @@ def parse_args():
                    help="종료 dbId (기본: 727174000)")
     p.add_argument("--step", type=int, default=1,
                    help="dbId 간격 (1=전수, 100=1%%샘플) (기본: 1)")
-    p.add_argument("--workers", type=int, default=10,
-                   help="동시 요청 수 (기본: 10)")
-    p.add_argument("--batch", type=int, default=50,
-                   help="배치 크기 (기본: 50)")
-    p.add_argument("--pause", type=float, default=5.0,
-                   help="배치 간 쿨다운 초 (기본: 5.0)")
+    p.add_argument("--rps", type=float, default=15.0,
+                   help="초당 최대 요청 수 (기본: 15.0, 429 시 자동 감속)")
+    p.add_argument("--concurrency", type=int, default=10,
+                   help="동시 연결 수 (기본: 10)")
+    p.add_argument("--batch", type=int, default=200,
+                   help="배치 크기 (기본: 200)")
+    p.add_argument("--pause", type=float, default=0.2,
+                   help="배치 간 최소 대기 초 (기본: 0.2)")
     p.add_argument("--output", type=str, default="daangn_seoul.csv",
                    help="출력 CSV 파일명 (기본: daangn_seoul.csv)")
     p.add_argument("--chunk", type=str, default=None,
@@ -138,7 +140,8 @@ def parse_args():
 args = parse_args()
 
 cfg = Config(
-    workers=args.workers,
+    rps=args.rps,
+    concurrency=args.concurrency,
     batch_size=args.batch,
     batch_pause=args.pause,
     step=args.step,
@@ -207,6 +210,7 @@ def build_display():
         f"  스캔      [bold]{fmt_num(stats.scanned)}[/]  [dim]({stats.speed:.1f}/초)[/]",
         f"  서울 수집  [bold orange1]{fmt_num(stats.collected)}[/]  [dim]({stats.seoul_speed:.1f}/초)[/]",
         f"  현재 dbId  [bold]{fmt_num(stats.current_dbid)}[/]",
+        f"  현재 RPS   [bold cyan]{stats.current_rps:.1f}[/]/초  [dim](적응형)[/]",
         f"  에러율     {'[red]' if stats.err_rate > 0.1 else ''}{stats.err_rate:.0%}{'[/]' if stats.err_rate > 0.1 else ''}",
         f"  경과       {fmt_time(stats.elapsed)}",
         f"  남은 예상  {fmt_time(eta) if eta > 0 else '-'}",
@@ -228,13 +232,13 @@ def build_display():
     sample_pct = f"{1/cfg.step*100:.2f}%" if cfg.step > 1 else "전수"
     est_seoul = int(total_scans * 0.187)
     config_text = (
-        f"  Workers    {cfg.workers}\n"
+        f"  RPS        {cfg.rps} (적응형)\n"
+        f"  Concurrency {cfg.concurrency}\n"
         f"  Batch      {cfg.batch_size}\n"
         f"  Pause      {cfg.batch_pause}초\n"
         f"  Step       {cfg.step}  [dim]({sample_pct})[/]\n"
         f"  예상 스캔  {fmt_num(total_scans)}\n"
         f"  예상 서울  ~{fmt_num(est_seoul)}\n"
-        f"  예상 시간  ~{fmt_time(total_scans / 34000 * 3600)}\n"
         f"  CSV 파일   {cfg.output_csv}"
     )
 
