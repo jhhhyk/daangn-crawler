@@ -121,8 +121,8 @@ def parse_args():
                    help="dbId 간격 (1=전수, 100=1%%샘플) (기본: 1)")
     p.add_argument("--workers", type=int, default=10,
                    help="동시 요청 수 (기본: 10)")
-    p.add_argument("--batch", type=int, default=20,
-                   help="배치 크기 (기본: 20)")
+    p.add_argument("--batch", type=int, default=50,
+                   help="배치 크기 (기본: 50)")
     p.add_argument("--pause", type=float, default=5.0,
                    help="배치 간 쿨다운 초 (기본: 5.0)")
     p.add_argument("--output", type=str, default="daangn_seoul.csv",

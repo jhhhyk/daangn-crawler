@@ -34,7 +34,7 @@ HEADERS = {
 @dataclass
 class Config:
     workers: int = 10
-    batch_size: int = 20
+    batch_size: int = 50
     batch_pause: float = 5.0
     step: int = 1
     save_every: int = 50
@@ -163,10 +163,11 @@ def run_crawl(
 
     progress = load_progress(cfg.progress_file)
     if progress:
-        start_id = progress["last_dbid"] - 1
+        start_id = cfg.start_dbid
         stats.scanned = progress["scanned"]
         stats.collected = progress["collected"]
-        log(f"이어서: dbId={start_id:,}, 스캔={stats.scanned:,}, 서울={stats.collected:,}")
+        resume_dbid = progress["last_dbid"]
+        log(f"이어서: 마지막 dbId={resume_dbid:,}, 스캔={stats.scanned:,}, 서울={stats.collected:,}")
     else:
         start_id = cfg.start_dbid
         stats.scanned = 0
