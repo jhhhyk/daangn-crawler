@@ -1,218 +1,223 @@
-# 당근 동네생활 크롤러
+# Karrot Community Post Crawler
 
-서울 전체 동네생활 게시글을 수집하는 크롤러입니다.
-
----
-
-## 파일 구성
-
-| 파일 | 설명 |
-|------|------|
-| `app.py` | 메인 실행 파일 (터미널 UI 포함) |
-| `crawler.py` | 크롤링 엔진 (app.py가 내부적으로 사용) |
-| `export.py` | 수집된 CSV를 Excel로 변환하거나 필터링해 내보내는 도구 |
-| `make_chunks.py` | 전체 범위를 2,000개 단위 청크로 나눠 `chunks.txt`로 저장 |
-| `seoul_regions.json` | 서울 685개 동 regionId 매핑 테이블 |
+A crawler that collects all community posts (`동네생활`) from Seoul neighborhoods on Karrot (당근마켓).
 
 ---
 
-## 설치
+## File Structure
+
+| File | Description |
+|------|-------------|
+| `app.py` | Main entry point with terminal UI |
+| `crawler.py` | Crawling engine (used internally by `app.py`) |
+| `export.py` | Tool to convert collected CSV to Excel or export with filters |
+| `make_chunks.py` | Splits the full ID range into 2,000-unit chunks and saves to `chunks.txt` |
+| `seoul_regions.json` | Mapping table of 685 Seoul neighborhood `regionId`s |
+
+---
+
+## Installation
 
 ```bash
-pip install requests rich openpyxl
+pip install aiohttp rich openpyxl
 ```
 
 ---
 
-## 실행 방법
+## Usage
 
-### 기본 실행
+### Basic Run
 
 ```bash
 python app.py
 ```
 
-실행하면 아래와 같이 **청크 분배 안내**가 출력됩니다.
+On launch, you will be prompted to enter a chunk number. The crawler will automatically configure the corresponding dbId range and begin crawling.
 
-```
-청크 분배 안내
-  전체 청크: 3,398개  (dbId 2,000개 단위)
+**Input Format**
 
-  1번: 청크    1 ~  680  dbId 732,609,953 ~ 733,968,953  (680개 청크)
-  2번: 청크  681 ~ 1360  dbId 731,249,953 ~ 732,609,952  (680개 청크)
-  3번: 청크 1361 ~ 2040  dbId 729,889,953 ~ 731,249,952  (680개 청크)
-  4번: 청크 2041 ~ 2719  dbId 728,531,953 ~ 729,889,952  (679개 청크)
-  5번: 청크 2720 ~ 3398  dbId 727,174,000 ~ 728,531,952  (679개 청크)
+| Example | Description |
+|---------|-------------|
+| `1-680` | Chunks 1 through 680 |
+| `500` | Chunk 500 only |
 
-  크롤링할 청크 번호를 입력하세요.
-  예) 단일: 500   범위: 1-680
-
-  청크 번호:
-```
-
-**입력 형식**
-
-| 입력 예시 | 설명 |
-|----------|------|
-| `1-680` | 청크 1번부터 680번까지 (1번 담당자) |
-| `681-1360` | 청크 681번부터 1360번까지 (2번 담당자) |
-| `500` | 500번 청크 하나만 |
-
-청크 번호를 입력하면 자동으로 해당 dbId 범위를 설정하고 크롤링을 시작합니다.
-출력 파일도 `daangn_chunk_1-680.csv` 형태로 자동 지정됩니다.
+The output file is automatically named in the format `daangn_chunk_1-680.csv`.
 
 ---
 
-## 5명 분업 방법
+## How Crawling Works
 
-### 1단계: 청크 목록 확인 (선택사항)
+### Overview
 
-```bash
-python make_chunks.py
+The crawler scans Karrot community posts (`동네생활`) by iterating over internal post IDs (`dbId`) in descending order, from the most recent to the oldest. Each `dbId` corresponds to a potential community post, and the crawler fetches each one to determine whether it exists and whether it belongs to a Seoul neighborhood.
+
+The total dbId range covered is **727,174,000 – 733,968,953** (~6.8 million IDs).
+
+---
+
+### Request Mechanism
+
+Each post is fetched via a single HTTP GET request to Karrot's internal API:
+
+```
+GET https://www.daangn.com/kr/community/{dbId}/?_data=routes%2Fkr.community.%24community_agora_id
 ```
 
-`chunks.txt` 파일이 생성되며, 전체 청크 번호와 각 청크의 dbId 범위를 확인할 수 있습니다.
+The `_data` query parameter instructs the server to return raw JSON data (used by Remix's server-side data loading), bypassing HTML rendering. This makes responses lightweight and machine-readable.
 
-### 2단계: 각자 담당 청크 실행
+**HTTP response handling:**
 
-각자 자신의 컴퓨터에서 담당 청크 번호를 입력해 실행합니다.
+| Status Code | Meaning | Action |
+|-------------|---------|--------|
+| `200` | Post exists and is active | Parse and save if Seoul |
+| `410` | Post exists but was deleted | Parse and save if Seoul |
+| `404` | dbId does not exist (gap in numbering) | Skip silently |
+| `429` | Rate limit exceeded | Backoff + slow down RPS |
+| Other | Network or server error | Retry up to 2 times |
 
+---
+
+### Async + Concurrency Architecture
+
+The crawler is fully asynchronous, built on Python's `asyncio` and `aiohttp`:
+
+- **`asyncio.gather()`** dispatches an entire batch of requests concurrently.
+- An **`asyncio.Semaphore`** caps the number of simultaneous TCP connections (default: 10).
+- An **`AdaptiveRateLimiter`** (token-bucket based) enforces a per-second request rate (default: 15 RPS), inserting `await asyncio.sleep()` between requests as needed.
+
+This design maximizes throughput while staying well within server-side rate limits under normal conditions.
+
+---
+
+### Adaptive Rate Limiter
+
+The `AdaptiveRateLimiter` automatically adjusts crawling speed based on server responses:
+
+- **On 429 (Too Many Requests):** RPS is immediately halved (`rps × 0.5`), capped at a minimum of 2 RPS. A 10-second cooldown follows.
+- **On 5 consecutive clean batches:** RPS is increased by 10% (`rps × 1.1`), up to a configured maximum.
+
+This allows the crawler to self-regulate without manual tuning, recovering speed after a throttle event while backing off aggressively when needed.
+
+---
+
+### Seoul Filtering
+
+After fetching a post, the crawler checks whether its `regionId` is present in `seoul_regions.json`. This file maps 685 Seoul administrative neighborhood IDs (`regionId`) to their district (`gu`) and neighborhood name (`dong`). Only posts matching a Seoul `regionId` are written to the CSV output — posts from other regions are discarded.
+
+---
+
+### Batching and Progress Persistence
+
+Posts are processed in batches of configurable size (default: 200 dbIds per batch). After every 500 collected Seoul posts, the crawler:
+
+1. **Appends** new rows to the CSV file (UTF-8 BOM encoding for Excel compatibility).
+2. **Saves** a progress snapshot to a JSON file (`daangn_chunk_<label>_progress.json`).
+
+The progress file stores:
+
+```json
+{ "last_dbid": 733500000, "scanned": 12000, "collected": 2340 }
 ```
-1번 컴퓨터: python app.py  →  청크 번호 입력: 1-680
-2번 컴퓨터: python app.py  →  청크 번호 입력: 681-1360
-3번 컴퓨터: python app.py  →  청크 번호 입력: 1361-2040
-4번 컴퓨터: python app.py  →  청크 번호 입력: 2041-2719
-5번 컴퓨터: python app.py  →  청크 번호 입력: 2720-3398
-```
 
-또는 인자로 직접 지정해 바로 실행할 수 있습니다.
+On restart with the same chunk label, the crawler reads this file and resumes exactly where it left off — no data is lost and no dbIds are re-scanned.
 
+---
+
+### Collected Data Fields
+
+Each saved post record contains the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dbId` | int | Karrot's internal numeric post ID |
+| `regionId` | int | Administrative neighborhood ID (linked to `seoul_regions.json`) |
+| `regionName` | string | Neighborhood name as stored in the post (e.g. `역삼1동`) |
+| `gu` | string | District (borough) derived from `seoul_regions.json` (e.g. `강남구`) |
+| `title` | string | Post title |
+| `content` | string | Post body text, truncated to 500 characters; newlines removed |
+| `subject` | string | Post category (e.g. `동네질문`, `동네맛집`, `생활정보`) |
+| `status` | string | Post status — `published` for active posts, or deletion-related status for HTTP 410 responses |
+| `createdAt` | datetime | Original post creation timestamp |
+| `updatedAt` | datetime | Last modification timestamp |
+| `commentsCount` | int | Number of comments |
+| `emotionCount` | int | Number of reactions (likes/empathy) |
+| `readsCount` | int | View count |
+| `watchesCount` | int | Number of users who saved/bookmarked the post |
+| `writer_nickName` | string | Author's display nickname |
+| `writer_temperature` | float | Author's "manner temperature" score (Karrot's trust metric) |
+| `writer_writeRegionName` | string | Author's verified neighborhood name |
+| `imageCount` | int | Number of images attached to the post |
+| `nodeId` | string | GraphQL node ID |
+| `articleUrl` | string | Full URL to the original post (e.g. `https://www.daangn.com/kr/community/...`) |
+
+---
+
+## Pause & Resume
+
+You can stop the crawler at any time with `Ctrl+C`. Progress is automatically saved and can be resumed later.
+
+**To stop:**
+- Press `Ctrl+C` — collected data and current position are saved immediately.
+
+**To resume:**
+- Run again with the same chunk label and the crawler will automatically continue from where it left off.
 ```bash
 python app.py --chunk 1-680
-python app.py --chunk 681-1360
-python app.py --chunk 1361-2040
-python app.py --chunk 2041-2719
-python app.py --chunk 2720-3398
 ```
 
-### 3단계: CSV 파일 취합
-
-각자 완료된 파일을 한 곳에 모아 합칩니다.
-
-```
-daangn_chunk_1-680.csv
-daangn_chunk_681-1360.csv
-daangn_chunk_1361-2040.csv
-daangn_chunk_2041-2719.csv
-daangn_chunk_2720-3398.csv
-```
-
----
-
-## 출력 CSV 파일 구조
-
-파일 인코딩: **UTF-8 BOM** (엑셀에서 바로 열어도 한글 정상 표시)
-
-| 컬럼 | 설명 |
-|------|------|
-| `dbId` | 당근 내부 게시글 고유 번호 |
-| `regionId` | 행정동 코드 |
-| `regionName` | 행정동 이름 (예: 역삼1동) |
-| `gu` | 자치구 (예: 강남구) |
-| `title` | 게시글 제목 |
-| `content` | 본문 (최대 500자, 줄바꿈 제거됨) |
-| `subject` | 카테고리 (예: 동네질문, 동네맛집, 생활정보) |
-| `status` | 게시글 상태 (published / deleted 등) |
-| `createdAt` | 작성일시 |
-| `updatedAt` | 수정일시 |
-| `commentsCount` | 댓글 수 |
-| `emotionCount` | 공감(좋아요) 수 |
-| `readsCount` | 조회 수 |
-| `watchesCount` | 저장 수 |
-| `writer_nickName` | 작성자 닉네임 |
-| `writer_temperature` | 작성자 매너온도 |
-| `writer_writeRegionName` | 작성자 인증 동네 |
-| `imageCount` | 첨부 이미지 수 |
-| `nodeId` | 노드 ID |
-| `articleUrl` | 게시글 원문 URL |
-
----
-
-## 중단 & 재시작
-
-크롤링 중 언제든지 `Ctrl+C`로 중단해도 됩니다. 진행 상황이 자동 저장되어 나중에 이어서 계속할 수 있습니다.
-
-**중단 방법**
-- `Ctrl+C` 누르면 현재까지 수집한 데이터와 진행 위치가 즉시 저장됩니다.
-- 컴퓨터를 꺼도 괜찮습니다.
-
-**이어서 재시작**
-- 같은 청크 번호를 입력해서 다시 실행하면 자동으로 멈춘 지점부터 이어서 수집합니다.
-```bash
-python app.py
-# 청크 번호: 1-680  ← 이전과 동일하게 입력
-```
-실행 시 이런 메시지가 뜨면 이어서 진행 중인 것입니다:
-```
-⚡ 이전 진행 발견: 스캔=12,500, 서울=2,340
-   이어서 진행합니다.
-```
-
-**처음부터 다시 시작**
+**To restart from the beginning:**
 ```bash
 python app.py --chunk 1-680 --reset
 ```
 
 ---
 
-## 데이터 내보내기 (export.py)
+## Exporting Data (export.py)
 
-수집 완료 후 CSV를 Excel로 변환하거나 조건별로 필터링해 내보낼 수 있습니다.
+After collection, you can convert the CSV to Excel or export filtered subsets.
 
 ```bash
 python export.py
 ```
 
-메뉴 설명:
+Menu options:
 
-| 번호 | 기능 |
-|------|------|
-| 1 | CSV 전체 내보내기 |
-| 2 | Excel 전체 내보내기 |
-| 3 | 필터링 후 CSV 내보내기 |
-| 4 | 필터링 후 Excel 내보내기 |
-| 5 | 구/카테고리별 요약 보기 |
+| # | Function |
+|---|----------|
+| 1 | Export full dataset as CSV |
+| 2 | Export full dataset as Excel |
+| 3 | Export filtered subset as CSV |
+| 4 | Export filtered subset as Excel |
+| 5 | Show summary by district / category |
 
-필터링 항목: **구** (예: 강남구), **동** (예: 역삼1동), **카테고리** (예: 동네맛집)
-
----
-
-## 전체 옵션 (app.py)
-
-| 옵션 | 기본값 | 설명 |
-|------|--------|------|
-| `--chunk` | - | 청크 번호 또는 범위 (예: `1-680`, `500`). 지정 시 대화형 선택 생략 |
-| `--start` | 733968953 | 시작 dbId (직접 지정 시 청크 UI 생략) |
-| `--end` | 727174000 | 종료 dbId |
-| `--step` | 1 | dbId 간격 (1=전수, 10=10% 샘플) |
-| `--workers` | 10 | 동시 요청 수 |
-| `--batch` | 1 | 배치 크기 |
-| `--pause` | 4.0 | 배치 간 쿨다운(초) |
-| `--output` | daangn_seoul.csv | 출력 파일명 직접 지정 |
-| `--reset` | - | 이전 진행 무시하고 처음부터 시작 |
+Filter options: **district** (e.g. `강남구`), **neighborhood** (e.g. `역삼1동`), **category** (e.g. `동네맛집`)
 
 ---
 
-## Step 설정 참고
+## CLI Options (app.py)
 
-전체 dbId 범위: 727,174,000 ~ 733,968,953 (약 680만개)
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--chunk` | — | Chunk number or range (e.g. `1-680`, `500`). Skips the interactive prompt when specified |
+| `--start` | 733968953 | Starting dbId (skips chunk UI when specified directly) |
+| `--end` | 727174000 | Ending dbId |
+| `--step` | 1 | dbId increment (1 = full scan, 10 = 10% sample) |
+| `--workers` | 10 | Number of concurrent connections |
+| `--batch` | 1 | Batch size |
+| `--pause` | 4.0 | Cooldown between batches (seconds) |
+| `--output` | daangn_seoul.csv | Output filename override |
+| `--reset` | — | Ignore previous progress and start from the beginning |
 
-| Step | 샘플 비율 | 서울 예상 수집량 | 예상 소요 시간 |
-|------|----------|----------------|--------------|
-| 1 | 전수 | ~127만건 | ~8.3일 |
-| 10 | 10% | ~12.7만건 | ~20시간 |
-| 50 | 2% | ~2.5만건 | ~4시간 |
-| 100 | 1% | ~1.3만건 | ~2시간 |
-| 1000 | 0.1% | ~1,300건 | ~12분 |
+---
 
-> 기본값은 Step=1 (전수 수집)입니다. 5명이 분업하면 각자 약 1.7일 소요됩니다.
+## Step Reference
+
+Full dbId range: 727,174,000 – 733,968,953 (~6.8 million IDs)
+
+| Step | Sample Rate | Estimated Seoul Posts | Estimated Time |
+|------|-------------|----------------------|----------------|
+| 1 | 100% (full) | ~1,270,000 | ~8.3 days |
+| 10 | 10% | ~127,000 | ~20 hours |
+| 50 | 2% | ~25,000 | ~4 hours |
+| 100 | 1% | ~13,000 | ~2 hours |
+| 1000 | 0.1% | ~1,300 | ~12 minutes |
